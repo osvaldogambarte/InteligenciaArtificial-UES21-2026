@@ -1,0 +1,209 @@
+    import numpy as np
+
+    # ─────────────────────────────────────────────
+    #  RED DE HOPFIELD — Prototipo TP3  (10 x 10)
+    #  Método: Hebb
+    # ─────────────────────────────────────────────
+
+    class RedHopfield:
+        """Red de Hopfield para imágenes de 10x10 píxeles (100 neuronas)."""
+
+        def __init__(self, size=100):
+            self.size = size          # 100 neuronas para imagen 10x10
+            self.weights = np.zeros((size, size))
+            self.patterns = []        # guarda los patrones en bipolar {-1, +1}
+
+        # ── Conversión ────────────────────────────
+        def _a_bipolar(self, pattern):
+            """Convierte {0,1} → {-1,+1}"""
+            return np.where(np.array(pattern) == 1, 1, -1).astype(float)
+
+        def _a_binario(self, pattern):
+            """Convierte {-1,+1} → {0,1}"""
+            return np.where(np.array(pattern) >= 0, 1, 0)
+
+        # ── Entrenamiento: Regla de Hebb ──────────
+        def entrenar_hebb(self, patterns):
+            """
+            W = (1/N) · Σ xµ · (xµ)ᵀ   (sin auto-conexiones)
+            """
+            self.weights = np.zeros((self.size, self.size))
+            self.patterns = []
+            for p in patterns:
+                x = self._a_bipolar(p).reshape(-1, 1)   # vector columna
+                self.weights += np.dot(x, x.T) / self.size
+                self.patterns.append(x.flatten())
+            np.fill_diagonal(self.weights, 0)             # sin auto-conexiones
+            print(f"[Hebb] Pesos calculados — {len(patterns)} patrón(es) almacenado(s)")
+
+        # ── Recuperación (actualización) ─
+        def prediccion(self, input_pattern, max_iter=20, verbose=True):
+            """
+            Itera actualizando neuronas hasta convergencia o max_iter ciclos.
+            Retorna el patrón recuperado en {0,1} y la cantidad de ciclos usados.
+            """
+            state = self._a_bipolar(input_pattern).copy()
+            for iteration in range(1, max_iter + 1):
+                prev = state.copy()
+                # Actualización en orden aleatorio
+                indices = np.random.permutation(self.size)
+                for i in indices:
+                    h = np.dot(self.weights[i], state)
+                    state[i] = 1.0 if h >= 0 else -1.0
+                changed = np.sum(prev != state)
+                energy = self._energy(state)
+                if verbose:
+                    similarity = self._best_similarity(state)
+                    print(f"  Ciclo: {iteration:2d} | Cambios: {changed:3d} | "
+                          f"Energía: {energy:8.2f} | Similitud: {similarity:3d}/100")
+                if changed == 0:
+                    if verbose:
+                        print(f"  →→→ Convergió en {iteration} ciclo(s)")
+                    break
+            return self._a_binario(state), iteration
+
+        # ── Función de energía de Hopfield ────────
+        def _energy(self, state):
+            """E = -½ · sᵀ · W · s"""
+            return -0.5 * state @ self.weights @ state
+
+        # ── Similitud con el mejor patrón ─────────
+        def _best_similarity(self, state):
+            binary = self._a_binario(state)
+            best = 0
+            for p in self.patterns:
+                p_bin = self._a_binario(p)
+                match = np.sum(binary == p_bin)
+                best = max(best, match)
+            return best
+
+        # ── Agregar ruido a un patrón ─────────────
+        def agregar_ruido(self, pattern, porcentaje_ruido=0.2, seed=None):
+            """Invierte aleatoriamente porcentaje_ruido de los píxeles."""
+            if seed is not None:
+                np.random.seed(seed)
+            p = np.array(pattern).copy()
+            n_flip = int(len(p) * porcentaje_ruido)
+            idx = np.random.choice(len(p), n_flip, replace=False)
+            p[idx] = 1 - p[idx]
+            return p
+
+        # ── Visualización en texto (10x10) ────────
+        def mostrar_imagen(self, pattern, title=""):
+            binary = self._a_binario(pattern) if np.any(np.array(pattern) < 0) else pattern
+            if title:
+                print(f"\n  {title}")
+                print("  " + "─" * 21)
+            for row in range(10):
+                line = "  |"
+                for col in range(10):
+                    line += "█ " if binary[row * 10 + col] == 1 else "· "
+                line += "|"
+                print(line)
+            print("  " + "─" * 21)
+
+        # ── Comparar dos imágenes lado a lado ─────
+        def mostrar_comparacion(self, pat_a, pat_b, title_a="Original", title_b="Recuperado"):
+            bin_a = self._a_binario(pat_a) if np.any(np.array(pat_a) < 0) else pat_a
+            bin_b = self._a_binario(pat_b) if np.any(np.array(pat_b) < 0) else pat_b
+            match = np.sum(bin_a == bin_b)
+            print(f"\n  {title_a:<22} {title_b}")
+            print("  " + "─" * 21 + "   " + "─" * 21)
+            for row in range(10):
+                la = "  |"
+                lb = "  |"
+                for col in range(10):
+                    la += "█ " if bin_a[row*10+col] == 1 else "· "
+                    lb += "█ " if bin_b[row*10+col] == 1 else "· "
+                print(la + "|   " + lb[2:] + "|")
+            print("  " + "─" * 21 + "   " + "─" * 21)
+            print(f"  Similitud: {match}/100 píxeles correctos ({match}%)\n")
+
+
+    # ─────────────────────────────────────────────
+    #  PATRONES (representan formas en 10x10)
+    # ─────────────────────────────────────────────
+
+    # Aro "C" — simula el anillo del block motor
+    ARO = [
+        0,0,0,1,1,1,1,0,0,0,
+        0,0,1,0,0,0,0,1,0,0,
+        0,1,0,0,0,0,0,0,1,0,
+        1,0,0,0,0,0,0,0,0,1,
+        1,0,0,0,0,0,0,0,0,1,
+        1,0,0,0,0,0,0,0,0,1,
+        1,0,0,0,0,0,0,0,0,1,
+        0,1,0,0,0,0,0,0,1,0,
+        0,0,1,0,0,0,0,1,0,0,
+        0,0,0,1,1,1,1,0,0,0,
+    ]
+
+    # Cuadrado
+    CUADRADO = [
+        0,0,0,0,0,0,0,0,0,0,
+        0,1,1,1,1,1,1,1,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,0,0,0,0,0,0,1,0,
+        0,1,1,1,1,1,1,1,1,0,
+        0,0,0,0,0,0,0,0,0,0,
+    ]
+
+    # Cruz — simula marca de referencia (escuadra del TP)
+    CRUZ = [
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+        1,1,1,1,1,1,1,1,1,1,
+        1,1,1,1,1,1,1,1,1,1,
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+        0,0,0,0,1,1,0,0,0,0,
+    ]
+
+
+    # ─────────────────────────────────────────────
+    #  PROGRAMA PRINCIPAL
+    # ─────────────────────────────────────────────
+
+    if __name__ == "__main__":
+
+        red = RedHopfield(size=100)
+
+        print("=" * 55)
+        print("  RED DE HOPFIELD  |  Imagen 10x10 = 100 neuronas")
+        print("=" * 55)
+
+        # ── EXPERIMENTO aplicando Método: Hebb con un solo patrón (Aro) ──
+        print("\n>>> EXPERIMENTO 1: Hebb — recuperación del Aro con 20% de ruido")
+        red.entrenar_hebb([ARO])
+        red.mostrar_imagen(ARO, "Patrón original: ARO")
+
+        ruido = red.agregar_ruido(ARO, porcentaje_ruido=0.20, seed=42)
+        red.mostrar_imagen(ruido, "Imagen con 20% de ruido")
+
+        print("\n  Proceso de recuperación:")
+        recovered, cycles = red.prediccion(ruido, max_iter=20)
+        red.mostrar_comparacion(ARO, recovered, "Original", f"Recuperado ({cycles} ciclos)")
+
+        # ── EXPERIMENTO 2: Hebb con múltiples patrones (ARO, CUADRADO, CRUZ)──
+        print("\n>>> EXPERIMENTO 2: Hebb — 3 patrones almacenados")
+        print(f"    Capacidad teórica: ~{int(0.138 * 100)} patrones para N=100")
+        red.entrenar_hebb([ARO, CUADRADO, CRUZ])
+
+        print("\n  Recuperando ARO con 25% de ruido:")
+        ruido_aro = red.agregar_ruido(ARO, porcentaje_ruido=0.25, seed=7)
+        red.mostrar_imagen(ruido, "Imagen con 25% de ruido")
+         
+        rec_aro, c1 = red.prediccion(ruido_aro, max_iter=20)
+        red.mostrar_comparacion(ARO, rec_aro, "ARO original", f"Recuperado ({c1} ciclos)")
+
+
+        print("\n" + "=" * 55)
+        print("  Fin experimento — Hopfield 10x10 - Método Hebb")
+        print("=" * 55)
